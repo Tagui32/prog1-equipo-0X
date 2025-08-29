@@ -5,3 +5,6 @@ Objetivo personal: Aprobar
 
 Nombre: Bruno Ramos
 Obj Personal: Seguir mejorando mi forma de analizar y resolver problemas, buscando soluciones claras y utiles, mezclando un poco de creatividad con sentido practico
+
+Emanuel Strah
+Mi objetivo personal es repasar y verificar lo que ya aprendí por mi cuenta sobre Python y estructuras de datos.
