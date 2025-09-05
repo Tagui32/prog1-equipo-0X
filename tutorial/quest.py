@@ -163,7 +163,7 @@ class QuestGame:
         fog = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
         fog.fill((0, 0, 0, 220))  # Opacidad ajustable
 
-        hero_screen_pos = self.hero.position
+        hero_screen_pos = self.hero.feet
         vision_radius = 120
         num_rays = 360  # Más rayos = más preciso, pero más lento
 
