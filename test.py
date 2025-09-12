@@ -98,6 +98,55 @@ def compute_visibility():
     for dx, dy in directions:
         illuminate(player_x + dx, player_y + dy, 1, dx,dy)
 
+class Enemy:
+    def __init__(self, x, y, speed):
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.active = False
+
+    def update(self, target_x, target_y):
+        if not self.active:
+            return
+
+        dx = target_x - self.x
+        dy = target_y - self.y
+
+        move_x, move_y = 0, 0
+        # Movimiento preferente: diagonal, luego horizontal, luego vertical
+        if dx != 0:
+            move_x = int(dx / abs(dx))
+        if dy != 0:
+            move_y = int(dy / abs(dy))
+
+        # Probar movimiento diagonal
+        new_x = self.x + move_x
+        new_y = self.y + move_y
+        if 0 <= new_x < MAP_SIZE and 0 <= new_y < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.x = new_x
+            self.y = new_y
+            return
+
+        # Probar movimiento horizontal
+        new_x = self.x + move_x
+        new_y = self.y
+        if move_x != 0 and 0 <= new_x < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.x = new_x
+            return
+
+        # Probar movimiento vertical
+        new_x = self.x
+        new_y = self.y + move_y
+        if move_y != 0 and 0 <= new_y < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.y = new_y
+            return
+
+    def draw(self, surface, offset_x, offset_y):
+        if self.active:
+            screen_x = (self.x - offset_x + CAMERA_RADIUS) * TILE_SIZE
+            screen_y = (self.y - offset_y + CAMERA_RADIUS) * TILE_SIZE
+            pygame.draw.rect(surface, (200, 0, 0), (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+
 def draw_map():
     """Dibuja el área visible con fog of war persistente + luz dinámica + degradado."""
     screen.fill((0, 0, 0))
@@ -149,33 +198,98 @@ def draw_map():
     center_y = CAMERA_RADIUS * TILE_SIZE
     pygame.draw.rect(screen, GREEN, (center_x, center_y, TILE_SIZE, TILE_SIZE))
 
+    # dibujar enemigos
+    for enemy in enemies:
+        enemy.draw(screen, player_x, player_y)
+
 def handle_input():
     global player_x, player_y
     keys = pygame.key.get_pressed()
     new_x, new_y = player_x, player_y
-
+    
     if keys[pygame.K_UP] and player_y > 0:
         new_y -= 1
-    if keys[pygame.K_DOWN] and player_y < MAP_SIZE - 1:
+    elif keys[pygame.K_DOWN] and player_y < MAP_SIZE - 1:
         new_y += 1
-    if keys[pygame.K_LEFT] and player_x > 0:
+    elif keys[pygame.K_LEFT] and player_x > 0:
         new_x -= 1
-    if keys[pygame.K_RIGHT] and player_x < MAP_SIZE - 1:
+    elif keys[pygame.K_RIGHT] and player_x < MAP_SIZE - 1:
         new_x += 1
 
     pared, _ = game_map[new_y][new_x]
-    if pared == 0:
+    if pared == 0 and (player_x != new_x or player_y != new_y):
         player_x, player_y = new_x, new_y
+        
+        for enemy in enemies:
+            enemy.update(player_x, player_y)
+            if game_map[enemy.y][enemy.x][1]:
+                enemy.active = True
+        
 
-# Bucle principal
-while True:
+game_state = "exploracion"  # Puede ser "exploracion" o "combate"
+active_enemy = None         # Enemigo actual en combate
+enemies = [
+    Enemy(5, 5, 1),
+    Enemy(20, 18, 1)
+]
+def check_combat():
+    global game_state, active_enemy
+    for enemy in enemies:
+        if enemy.active and enemy.x == player_x and enemy.y == player_y:
+            game_state = "combate"
+            active_enemy = enemy
+            break
+
+def draw_combat_menu():
+    # Fondo de combate
+    screen.fill((30, 30, 30))
+    font = pygame.font.SysFont(None, 32)
+    # Título
+    title = font.render("¡Combate!", True, (255, 0, 0))
+    screen.blit(title, (screen.get_width()//2 - title.get_width()//2, 40))
+    # Opciones de menú
+    options = ["1. Atacar", "2. Defender", "3. Huir"]
+    for i, opt in enumerate(options):
+        txt = font.render(opt, True, (255, 255, 255))
+        screen.blit(txt, (screen.get_width()//2 - txt.get_width()//2, 120 + i*40))
+    # Info del enemigo
+    info = font.render(f"Enemigo en ({active_enemy.x}, {active_enemy.y})", True, (200, 0, 0))
+    screen.blit(info, (screen.get_width()//2 - info.get_width()//2, 220))
+
+def handle_combat_input():
+    global game_state, active_enemy
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1:
+                # Atacar (ejemplo: eliminar enemigo y volver a exploración)
+                enemies.remove(active_enemy)
+                active_enemy = None
+                game_state = "exploracion"
+            elif event.key == pygame.K_2:
+                # Defender (puedes expandir lógica)
+                game_state = "exploracion"
+            elif event.key == pygame.K_3:
+                # Huir (volver a exploración)
+                game_state = "exploracion"
 
-    handle_input()
-    compute_visibility()
-    draw_map()
-    pygame.display.flip()
-    clock.tick(10)
+# Bucle principal
+while True:
+    if game_state == "exploracion":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+        compute_visibility()
+        draw_map()
+        handle_input()
+        check_combat()
+        pygame.display.flip()
+        clock.tick(10)
+    elif game_state == "combate":
+        draw_combat_menu()
+        handle_combat_input()
+        pygame.display.flip()
+        clock.tick(10)
