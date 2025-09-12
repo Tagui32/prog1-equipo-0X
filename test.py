@@ -62,7 +62,7 @@ def illuminate(x, y, depth, dx,dy):
     # continuar propagando en la misma dirección
     # direcciones_restantes = directions.copy()
     
-    illuminate(x + dx, y + dy, depth + 1, dx, dy)
+    illuminate(x + dx, y + dy, depth + 1, dx,dy)
     if dx != 0 and dy != 0:
         illuminate(x + dx, y, depth + 1, dx, 0)
         illuminate(x, y + dy, depth + 1, 0, dy)
@@ -99,7 +99,7 @@ def compute_visibility():
         illuminate(player_x + dx, player_y + dy, 1, dx,dy)
 
 def draw_map():
-    """Dibuja el área visible con fog of war persistente + luz dinámica."""
+    """Dibuja el área visible con fog of war persistente + luz dinámica + degradado."""
     screen.fill((0, 0, 0))
 
     for row in range(-CAMERA_RADIUS, CAMERA_RADIUS + 1):
@@ -125,11 +125,24 @@ def draw_map():
                     if pared == 1:
                         pygame.draw.rect(screen, BROWN, (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
 
+                    # --- Degradado de niebla ---
+                    dist = math.hypot(map_x - player_x, map_y - player_y)
                     if not visible:
                         # explorada pero no visible → sombra ligera
                         overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
                         overlay.fill(DARK_EXPLORED)
                         screen.blit(overlay, (screen_x, screen_y))
+                    else:
+                        # visible: aplicar degradado según distancia
+                        if dist > 0:
+                            # calcula opacidad: cerca = transparente, lejos = más opaco
+                            # opacidad máxima en el borde de la visión
+                            alpha = int(90 * (dist / VISION_RADIUS))
+                            alpha = max(0, min(alpha, 220))
+                            if alpha > 0:
+                                overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                                overlay.fill((0, 0, 0, alpha))
+                                screen.blit(overlay, (screen_x, screen_y))
 
     # dibujar jugador
     center_x = CAMERA_RADIUS * TILE_SIZE
