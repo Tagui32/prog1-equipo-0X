@@ -3,6 +3,7 @@ import sys
 import random
 import math
 from map import example_map
+
 # Configuración inicial
 pygame.init()
 TILE_SIZE = 32
@@ -23,8 +24,8 @@ DARK_EXPLORED = (0, 0, 0, 150)  # sombra ligera
 DARK_UNEXPLORED = (0, 0, 0, 255)  # completamente negro
 
 # Cargar imagen de fondo (suelo)
-map_image = pygame.image.load("mapa.png").convert()
-map_image = pygame.transform.scale(map_image, (MAP_SIZE*TILE_SIZE, MAP_SIZE*TILE_SIZE))
+# map_image = pygame.image.load("mapa.png").convert()
+# map_image = pygame.transform.scale(map_image, (MAP_SIZE*TILE_SIZE, MAP_SIZE*TILE_SIZE))
 
 # Generar mapa: (pared, explorada)
 # game_map = [[(0 if random.random() > 0.2 else 1, False) for _ in range(MAP_SIZE)] for _ in range(MAP_SIZE)]
@@ -108,7 +109,7 @@ class Enemy:
     def update(self, target_x, target_y):
         if not self.active:
             return
-
+        print("enemigo moviendose")
         dx = target_x - self.x
         dy = target_y - self.y
 
@@ -223,6 +224,7 @@ def handle_input():
         for enemy in enemies:
             enemy.update(player_x, player_y)
             if game_map[enemy.y][enemy.x][1]:
+                print("enemigo descubierto")
                 enemy.active = True
         
 
@@ -267,6 +269,7 @@ def handle_combat_input():
                 # Atacar (ejemplo: eliminar enemigo y volver a exploración)
                 enemies.remove(active_enemy)
                 active_enemy = None
+                next_level()
                 game_state = "exploracion"
             elif event.key == pygame.K_2:
                 # Defender (puedes expandir lógica)
@@ -274,6 +277,56 @@ def handle_combat_input():
             elif event.key == pygame.K_3:
                 # Huir (volver a exploración)
                 game_state = "exploracion"
+
+
+
+# Para pasar al siguiente nivel:
+def next_level():
+    global current_level
+    current_level += 1
+    if current_level < len(levels):
+        load_level(current_level)
+    else:
+        print("¡Juego terminado!")
+        pygame.quit()
+        sys.exit()
+
+def load_level(level_index):
+    global game_map, map_image, player_x, player_y, enemies
+    lvl = levels[level_index]
+    # Copia profunda para no compartir explorado entre niveles
+    game_map = [[(cell[0], False) for cell in row] for row in lvl.map_data]
+    map_image = lvl.bg_image
+    player_x, player_y = lvl.player_start
+    game_map[player_y][player_x] = (game_map[player_y][player_x][0], True)
+    enemies = [Enemy(x, y, speed) for (x, y, speed) in lvl.enemies_data]
+
+class Level:
+    def __init__(self, map_data, bg_image_path, player_start, enemies_data):
+        self.map_data = map_data  # matriz de paredes/exploradas
+        self.bg_image = pygame.image.load(bg_image_path).convert()
+        self.bg_image = pygame.transform.scale(self.bg_image, (MAP_SIZE*TILE_SIZE, MAP_SIZE*TILE_SIZE))
+        self.player_start = player_start  # (x, y)
+        self.enemies_data = enemies_data  # lista de tuplas (x, y, speed)
+
+levels = [
+    Level(
+        map_data=example_map,  # o carga desde archivo
+        bg_image_path="mapa1.png",
+        player_start=(12, 12),
+        enemies_data=[(5, 5, 1), (20, 18, 1)]
+    ),
+    Level(
+        map_data=example_map,  # otro mapa definido
+        bg_image_path="mapa2.png",
+        player_start=(2, 2),
+        enemies_data=[(10, 10, 1)]
+    ),
+    # ...agrega más niveles aquí...
+]
+
+current_level = 0
+load_level(current_level)
 
 # Bucle principal
 while True:
