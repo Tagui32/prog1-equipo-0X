@@ -13,7 +13,7 @@ CAMERA_RADIUS = 9
 WINDOW_SIZE = CAMERA_RADIUS * 2 + 1
 
 screen = pygame.display.set_mode((WINDOW_SIZE * TILE_SIZE, WINDOW_SIZE * TILE_SIZE))
-pygame.display.set_caption("Juego con luz dinámica y paredes que bloquean visión")
+pygame.display.set_caption("Juego algoritmos y estructuras de datos")
 
 clock = pygame.time.Clock()
 
@@ -99,8 +99,15 @@ def compute_visibility():
     for dx, dy in directions:
         illuminate(player_x + dx, player_y + dy, 1, dx,dy)
 
-class Enemy:
-    def __init__(self, x, y, speed):
+class Combatant:
+    def __init__(self, ataque, defensa, vida):
+        self.ataque = ataque
+        self.defensa = defensa
+        self.vida = vida
+
+class Enemy(Combatant):
+    def __init__(self, x, y, speed, ataque=8, defensa=6, vida=20):
+        super().__init__(ataque, defensa, vida)
         self.x = x
         self.y = y
         self.speed = speed
@@ -109,7 +116,129 @@ class Enemy:
     def update(self, target_x, target_y):
         if not self.active:
             return
-        print("enemigo moviendose")
+        dx = target_x - self.x
+        dy = target_y - self.y
+
+        move_x, move_y = 0, 0
+        # Movimiento preferente: diagonal, luego horizontal, luego vertical
+        if dx != 0:
+            move_x = int(dx / abs(dx))
+        if dy != 0:
+            move_y = int(dy / abs(dy))
+
+        # Probar movimiento diagonal
+        new_x = self.x + move_x
+        new_y = self.y + move_y
+        if 0 <= new_x < MAP_SIZE and 0 <= new_y < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.x = new_x
+            self.y = new_y
+            return
+
+        # Probar movimiento horizontal
+        new_x = self.x + move_x
+        new_y = self.y
+        if move_x != 0 and 0 <= new_x < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.x = new_x
+            return
+
+        # Probar movimiento vertical
+        new_x = self.x
+        new_y = self.y + move_y
+        if move_y != 0 and 0 <= new_y < MAP_SIZE and game_map[int(new_y)][int(new_x)][0] == 0:
+            self.y = new_y
+            return
+
+    def draw(self, surface, offset_x, offset_y):
+        if self.active:
+            screen_x = (self.x - offset_x + CAMERA_RADIUS) * TILE_SIZE
+            screen_y = (self.y - offset_y + CAMERA_RADIUS) * TILE_SIZE
+            pygame.draw.rect(surface, (200, 0, 0), (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+
+class Player(Combatant):
+    def __init__(self, ataque=10, defensa=8, vida=30):
+        super().__init__(ataque, defensa, vida)
+
+# Posición inicial del jugador
+player_x, player_y = MAP_SIZE // 2, MAP_SIZE // 2
+player = Player(ataque=10, defensa=8, vida=30)
+game_map[player_y][player_x] = (0, True)
+
+# Guardamos visibilidad actual (True si la celda está iluminada este frame)
+visible_tiles = [[False for _ in range(MAP_SIZE)] for _ in range(MAP_SIZE)]
+
+def generar_direcciones():
+    valores = [1, 0, -1]
+    combinaciones = []
+    for a in valores:
+        for b in valores:
+            combinaciones.append((a, b))
+    combinaciones.remove((0,0))
+    return combinaciones
+    
+def illuminate(x, y, depth, dx,dy):
+    """Recursivamente propaga luz en dirección (dx, dy)."""
+    if depth > VISION_RADIUS:
+        return
+    if not (0 <= x < MAP_SIZE and 0 <= y < MAP_SIZE):
+        return
+
+    pared, explorada = game_map[y][x]
+    visible_tiles[y][x] = True
+    game_map[y][x] = (pared, True)  # marcar como explorada
+
+    if pared == 1:
+        return  # la luz no pasa paredes
+
+    # continuar propagando en la misma dirección
+    # direcciones_restantes = directions.copy()
+    
+    illuminate(x + dx, y + dy, depth + 1, dx,dy)
+    if dx != 0 and dy != 0:
+        illuminate(x + dx, y, depth + 1, dx, 0)
+        illuminate(x, y + dy, depth + 1, 0, dy)
+    elif dx != 0 and dy == 0 or dx == 0 and dy != 0:
+        illuminate(x + dx, y, depth + 2, dx, 0)
+        illuminate(x, y + dy, depth + 2, 0, dy)
+
+        
+
+def compute_visibility():
+    """Recalcula qué casillas son visibles con propagación recursiva."""
+    global visible_tiles
+    visible_tiles = [[False for _ in range(MAP_SIZE)] for _ in range(MAP_SIZE)]
+
+    # iluminar la posición del jugador
+    visible_tiles[player_y][player_x] = True
+    game_map[player_y][player_x] = (game_map[player_y][player_x][0], True)
+
+    # lanzar rayos en 360° alrededor del jugador
+    
+
+    
+    directions = generar_direcciones()
+
+    # for angle in range(0, 360, 5):  # cada 5 grados para mayor densidad
+    #     rad = math.radians(angle)
+    #     dx = round(math.cos(rad))
+    #     dy = round(math.sin(rad))
+    #     print(f"dx: {dx} dy: {dy}")
+    #     if (dx, dy) != (0, 0) and (dx, dy) not in directions:
+    #         directions.append((dx, dy))
+
+    for dx, dy in directions:
+        illuminate(player_x + dx, player_y + dy, 1, dx,dy)
+
+class Enemy(Combatant):
+    def __init__(self, x, y, speed, ataque=8, defensa=6, vida=20):
+        super().__init__(ataque, defensa, vida)
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.active = False
+
+    def update(self, target_x, target_y):
+        if not self.active:
+            return
         dx = target_x - self.x
         dy = target_y - self.y
 
@@ -304,28 +433,82 @@ def draw_combat_menu():
         txt = font.render(opt, True, (255, 255, 255))
         screen.blit(txt, (screen.get_width()//2 - txt.get_width()//2, 120 + i*40))
     # Info del enemigo
-    info = font.render(f"Enemigo en ({active_enemy.x}, {active_enemy.y})", True, (200, 0, 0))
+    info = font.render(f"Enemigo: Vida {active_enemy.vida} | Atk {active_enemy.ataque} | Def {active_enemy.defensa}", True, (200, 0, 0))
     screen.blit(info, (screen.get_width()//2 - info.get_width()//2, 220))
+    info2 = font.render(f"Jugador: Vida {player.vida} | Atk {player.ataque} | Def {player.defensa}", True, (0, 200, 0))
+    screen.blit(info2, (screen.get_width()//2 - info2.get_width()//2, 260))
+    if combat_log:
+        logtxt = font.render(combat_log, True, (255,255,0))
+        screen.blit(logtxt, (screen.get_width()//2 - logtxt.get_width()//2, 320))
+
+combat_turn = "player"  # "player" o "enemy"
+combat_log = ""
+
+def combat_attack(attacker, defender):
+    global combat_log
+    dice = random.randint(1, 20)
+    porcentaje = random.randint(60, 100) / 100.0
+    base_damage = math.ceil(attacker.ataque * porcentaje)
+    log = f"Tira d20: {dice} + Atk {attacker.ataque} vs Def {defender.defensa}. "
+    if dice == 1:
+        self_damage = math.ceil(base_damage * 0.5)
+        attacker.vida -= self_damage
+        log += f"¡Pifia! El atacante se hiere por {self_damage}."
+    elif dice == 20:
+        if dice + attacker.ataque >= defender.defensa:
+            damage = base_damage * 2
+            defender.vida -= math.ceil(damage)
+            log += f"¡Crítico! Daño doble: {math.ceil(damage)}."
+        else:
+            log += "¡Crítico pero no supera defensa!"
+    elif dice + attacker.ataque >= defender.defensa:
+        defender.vida -= base_damage
+        log += f"Golpea y causa {base_damage} daño."
+    else:
+        log += "Falla el ataque."
+    combat_log = log
+    draw_combat_menu()
+    pygame.time.delay(500)
+
 
 def handle_combat_input():
-    global game_state, active_enemy
+    global game_state, active_enemy, combat_turn, combat_log
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-        if event.type == pygame.KEYDOWN:
+        if event.type == pygame.KEYDOWN and combat_turn == "player":
             if event.key == pygame.K_1:
-                # Atacar (ejemplo: eliminar enemigo y volver a exploración)
-                enemies.remove(active_enemy)
-                active_enemy = None
-                # next_level()
-                game_state = "exploracion"
+                combat_attack(player, active_enemy)
+                combat_turn = "enemy"
             elif event.key == pygame.K_2:
-                # Defender (puedes expandir lógica)
-                game_state = "exploracion"
+                combat_log = "El jugador se defiende (sin efecto por ahora)."
+                combat_turn = "enemy"
             elif event.key == pygame.K_3:
-                # Huir (volver a exploración)
+                combat_log = "¡Huyes del combate!"
                 game_state = "exploracion"
+                combat_turn = "player"
+                active_enemy = None
+    
+
+def handle_enemy_combat():
+    global game_state, active_enemy, combat_turn, combat_log
+    if active_enemy and combat_turn == "enemy":
+        # pygame.time.delay(500)
+        combat_attack(active_enemy, player)
+        combat_turn = "player"
+        # Chequear si alguien muere
+        if player.vida <= 0:
+            combat_log = "¡Has sido derrotado!"
+            # pygame.time.delay(1000)
+            pygame.quit()
+            sys.exit()
+        elif active_enemy.vida <= 0:
+            combat_log = "¡Enemigo derrotado!"
+            enemies.remove(active_enemy)
+            active_enemy = None
+            game_state = "exploracion"
+            combat_turn = "player"
 
 
 
@@ -397,5 +580,9 @@ while True:
     elif game_state == "combate":
         draw_combat_menu()
         handle_combat_input()
+        draw_combat_menu()
+        pygame.display.flip()
+        pygame.time.delay(500)
+        handle_enemy_combat()
         pygame.display.flip()
         clock.tick(10)
