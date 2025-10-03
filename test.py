@@ -148,7 +148,53 @@ class Enemy:
             screen_y = (self.y - offset_y + CAMERA_RADIUS) * TILE_SIZE
             pygame.draw.rect(surface, (200, 0, 0), (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
 
+class Level:
+    def __init__(self, map_data, bg_image_path, player_start, enemies_data, exit_pos):
+        self.map_data = map_data  # matriz de paredes/exploradas
+        self.bg_image = pygame.image.load(bg_image_path).convert()
+        self.bg_image = pygame.transform.scale(self.bg_image, (MAP_SIZE*TILE_SIZE, MAP_SIZE*TILE_SIZE))
+        self.player_start = player_start  # (x, y)
+        self.enemies_data = enemies_data  # lista de tuplas (x, y, speed)
+        self.exit_pos = exit_pos          # (x, y) posición de la salida
+
+levels = [
+    Level(
+        map_data=example_map,
+        bg_image_path="mapa1.png",
+        player_start=(12, 12),
+        enemies_data=[(5, 5, 1), (20, 18, 1)],
+        exit_pos=(23, 23)
+    ),
+    Level(
+        map_data=example_map,
+        bg_image_path="mapa2.png",
+        player_start=(2, 2),
+        enemies_data=[(10, 10, 1)],
+        exit_pos=(0, 24)
+    ),
+    # ...agrega más niveles aquí...
+]
+
+current_level = 0
+exit_pos = levels[current_level].exit_pos
+
+def load_level(level_index):
+    global game_map, map_image, player_x, player_y, enemies, exit_pos
+    lvl = levels[level_index]
+    game_map = [[(cell[0], False) for cell in row] for row in lvl.map_data]
+    map_image = lvl.bg_image
+    player_x, player_y = lvl.player_start
+    game_map[player_y][player_x] = (game_map[player_y][player_x][0], True)
+    enemies = [Enemy(x, y, speed) for (x, y, speed) in lvl.enemies_data]
+    exit_pos = lvl.exit_pos
+
+def check_exit():
+    global current_level
+    if (player_x, player_y) == exit_pos:
+        next_level()
+
 def draw_map():
+    global map_image
     """Dibuja el área visible con fog of war persistente + luz dinámica + degradado."""
     screen.fill((0, 0, 0))
 
@@ -193,6 +239,9 @@ def draw_map():
                                 overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
                                 overlay.fill((0, 0, 0, alpha))
                                 screen.blit(overlay, (screen_x, screen_y))
+            # Dibujar la salida si está en pantalla
+            if (map_x, map_y) == exit_pos:
+                pygame.draw.rect(screen, (0, 255, 0), (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
 
     # dibujar jugador
     center_x = CAMERA_RADIUS * TILE_SIZE
@@ -269,7 +318,7 @@ def handle_combat_input():
                 # Atacar (ejemplo: eliminar enemigo y volver a exploración)
                 enemies.remove(active_enemy)
                 active_enemy = None
-                next_level()
+                # next_level()
                 game_state = "exploracion"
             elif event.key == pygame.K_2:
                 # Defender (puedes expandir lógica)
@@ -292,42 +341,45 @@ def next_level():
         sys.exit()
 
 def load_level(level_index):
-    global game_map, map_image, player_x, player_y, enemies
+    global game_map, map_image, player_x, player_y, enemies, exit_pos
     lvl = levels[level_index]
-    # Copia profunda para no compartir explorado entre niveles
     game_map = [[(cell[0], False) for cell in row] for row in lvl.map_data]
     map_image = lvl.bg_image
     player_x, player_y = lvl.player_start
     game_map[player_y][player_x] = (game_map[player_y][player_x][0], True)
     enemies = [Enemy(x, y, speed) for (x, y, speed) in lvl.enemies_data]
+    exit_pos = lvl.exit_pos
 
 class Level:
-    def __init__(self, map_data, bg_image_path, player_start, enemies_data):
+    def __init__(self, map_data, bg_image_path, player_start, enemies_data, exit_pos):
         self.map_data = map_data  # matriz de paredes/exploradas
         self.bg_image = pygame.image.load(bg_image_path).convert()
         self.bg_image = pygame.transform.scale(self.bg_image, (MAP_SIZE*TILE_SIZE, MAP_SIZE*TILE_SIZE))
         self.player_start = player_start  # (x, y)
         self.enemies_data = enemies_data  # lista de tuplas (x, y, speed)
+        self.exit_pos = exit_pos          # (x, y) posición de la salida
 
 levels = [
     Level(
-        map_data=example_map,  # o carga desde archivo
+        map_data=example_map,
         bg_image_path="mapa1.png",
         player_start=(12, 12),
-        enemies_data=[(5, 5, 1), (20, 18, 1)]
+        enemies_data=[(5, 5, 1), (20, 18, 1)],
+        exit_pos=(23, 23)
     ),
     Level(
-        map_data=example_map,  # otro mapa definido
+        map_data=example_map,
         bg_image_path="mapa2.png",
         player_start=(2, 2),
-        enemies_data=[(10, 10, 1)]
+        enemies_data=[(10, 10, 1)],
+        exit_pos=(0, 23)
     ),
     # ...agrega más niveles aquí...
 ]
 
 current_level = 0
-load_level(current_level)
-
+exit_pos = levels[current_level].exit_pos
+map_image = levels[current_level].bg_image
 # Bucle principal
 while True:
     if game_state == "exploracion":
@@ -339,6 +391,7 @@ while True:
         draw_map()
         handle_input()
         check_combat()
+        check_exit()
         pygame.display.flip()
         clock.tick(10)
     elif game_state == "combate":
