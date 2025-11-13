@@ -150,6 +150,56 @@ floating_texts = []  # Diccionarios de textos flotantes (daño, oro, etc.)
 # ----------------------
 # ENTIDADES (GENERACIÓN DE DICCIONARIOS)
 # ----------------------
+
+def make_player(x,y):
+    """Crea y retorna un diccionario con las estadísticas base del jugador."""
+    return {
+        "x": x, "y": y,
+        "hp": 40, "hp_max":40,
+        "atk": 10, "def": 8,
+        "gold": 0,
+        "potions": 1,
+        "attack_buff": 0,
+        "speed": 6,
+        "stun": 0,
+        "cd_strike": 0,
+        "cd_arrow": 0,
+        "last_dir": (0, -1),
+        "vx": 0.0, "vy": 0.0,
+        "level": 1,
+        "exp": 0,
+        "exp_to_next_level": 15
+    }
+
+def make_enemy(x,y,level=1):
+    """Crea y retorna un diccionario con las estadísticas del enemigo, escaladas por nivel."""
+    enemy_type = random.choice(list(ENEMY_TYPES.keys()))
+    enemy_data = ENEMY_TYPES[enemy_type]
+    
+    base_hp = random.randint(10, 16) + (level * 6)
+    return {
+        "x": x, "y": y,
+        "hp": base_hp, "hp_max": base_hp,
+        "atk": random.randint(6, 10) + (level * 2),
+        "def": random.randint(4, 8) + (level * 1),
+        "active": False,
+        "level": level,
+        "type": enemy_type,
+        "sprite": enemy_data["sprite"],
+        "dialogues": enemy_data["dialogues"],
+        "current_dialogue": "",
+        "gold_drop": random.randint(3, 10) + level,
+        "patrol_dir": random.choice([(1,0),(-1,0),(0,1),(0,-1)]),
+        "aggro_range": 6 + level//2,
+        "stun": 0,
+        "vx": 0.0, "vy": 0.0
+    }
+
+
+# ----------------------
+# PERSISTENCIA (GUARDADO Y CARGA)
+# ----------------------
+
 def save_game():
     """Guarda el estado completo del juego (jugador, enemigos y mapa) en un archivo JSON."""
     if not player_nickname or player is None or game_state == "gameover":
@@ -200,6 +250,7 @@ def save_game():
         return False
 
 def load_game():
+    """Carga los datos de la última partida guardada desde el archivo JSON."""
     try:
         if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, 'r') as f:
@@ -209,6 +260,7 @@ def load_game():
     return None
 
 def save_leaderboard_entry():
+    """Guarda la puntuación final del jugador en el archivo del leaderboard."""
     if not player_nickname:
         return False
     
@@ -248,6 +300,7 @@ def get_leaderboard():
     except:
         pass
     return []
+
 
 # ----------------------
 # GENERACIÓN DE MAPAS
@@ -878,13 +931,45 @@ def move_enemies_ai():
 # LÓGICA DE COMBATE CENTRAL
 # ----------------------
 
+def calc_damage(attacker, defender, power=1.0, is_crit=False):
+    """Calcula el daño final basado en ATK del atacante y DEF del defensor."""
+    base = attacker['atk'] * power
+    variance = random.uniform(0.85, 1.15)
+    raw = base * variance
+    mit = defender['def'] / (defender['def'] + 20) # Fórmula de mitigación por defensa
+    dmg = max(1, int(raw * (1 - mit)))
+    if is_crit:
+        dmg = int(dmg * 1.8)
+    return dmg
+
+def roll_hit_and_crit(attacker, defender):
+    """Determina si el ataque acierta (hit) y si es un golpe crítico (crit)."""
+    hit_chance = 0.75 + (attacker['atk'] - defender['def']) * 0.015
+    hit_chance = max(0.2, min(0.98, hit_chance))
+    if random.random() > hit_chance:
+        return False, False # Fallo
+    dodge = max(0.02, min(0.35, (defender.get('speed',4) - attacker.get('speed',4)) * 0.03 + 0.05))
+    if random.random() < dodge:
+        return False, False # Esquiva
+    crit_chance = 0.06 + (attacker['atk'] * 0.008)
+    crit = (random.random() < crit_chance)
+    return True, crit # Acierto y estado crítico
+
+def apply_status_ticks(entity):
+    """Aplica los efectos de estado (como sangrado) al inicio del turno."""
+    if entity.get('bleed',0) > 0:
+        dmg = max(1, int(entity['hp_max'] * 0.03)) # Daño por sangrado (3% de HP max)
+        entity['hp'] -= dmg
+        # spawn_floating_text(entity['x'] + random.uniform(-0.2,0.2), entity['y'] - 0.2, f"-{dmg}", (200,100,40))
+        entity['bleed'] -= 1
+
 def combat_attack(attacker, defender, power=1.0, status_apply=None):
     """Ejecuta un ataque completo, calcula daño, aplica efectos y genera feedback visual."""
-    hit, crit = (10,20)
+    hit, crit = roll_hit_and_crit(attacker, defender)
     if not hit:
         return ("Falla el ataque.", 0, False)
         
-    dmg = 22
+    dmg = calc_damage(attacker, defender, power=power, is_crit=crit)
     defender['hp'] -= dmg
     
     log = f"Infliges {dmg} daño."
@@ -894,6 +979,9 @@ def combat_attack(attacker, defender, power=1.0, status_apply=None):
         for k,v in status_apply.items():
             defender[k] = defender.get(k,0) + v
             
+    # Feedback visual
+    # spawn_particle(defender['x'], defender['y'], n=8, color=(255,80,40), size=2)
+    # spawn_floating_text(defender['x'], defender['y'], f"-{dmg}", (255,200,120))
     return (log, dmg, True)
 
 def start_combat(enemy):
@@ -916,15 +1004,18 @@ def end_combat(victor):
         enemy_points = active_enemy['level']
         total_score += enemy_points
         exp_gained = max(5, active_enemy['level'] * 6)
+        # gain_experience(exp_gained)
         g = active_enemy.get('gold_drop', 0)
         player['gold'] += g
-        combat_log += f" (+{g} oro)"
         
-        # Mostrar puntos ganados
-        try:
-            enemies.remove(active_enemy)
-        except ValueError:
-            pass
+        combat_log = f"Has derrotado al enemigo. +{exp_gained} EXP (+{g} oro)"
+        # spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{enemy_points} pts", (100, 200, 255))
+        # spawn_particle(active_enemy['x'], active_enemy['y'], n=12, color=(255,200,80), size=3)
+        # spawn_floating_text(active_enemy['x'], active_enemy['y'], f"+{g} oro", (255,220,100))
+        # spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{exp_gained} EXP", (100,200,255))
+        
+        try: enemies.remove(active_enemy)
+        except ValueError: pass
         active_enemy = None
         game_state = "exploracion"
         if player_nickname: save_game()
@@ -982,6 +1073,7 @@ def handle_player_combat_input(key):
             heal = min(player['hp_max'] - player['hp'], 20)
             player['hp'] += heal
             combat_log = f"Usas una poción y recuperas {heal} HP."
+            # spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
             combat_turn = "enemy"
         else: combat_log = "No tienes pociones."
     elif key == pygame.K_a:
@@ -1001,8 +1093,29 @@ def handle_player_combat_input(key):
                         try: enemies.remove(target);
                         except ValueError: pass
                     break
+            if not hit_any: combat_log = "Flecha no impacta a nadie."
+            combat_turn = "enemy"
+    elif key == pygame.K_z:
+        if player['cd_strike'] > 0:
+            combat_log = f"Golpe fuerte en cooldown ({player['cd_strike']})"
+        else:
+            dice = random.randint(1,20)
+            if dice == 1: # Pifia crítica
+                selfdmg = max(1, int(player['hp_max']*0.06)); player['hp'] -= selfdmg; player['stun'] = 1
+                combat_log = f"Pifia y te lastimas {selfdmg} HP y quedas aturdido."
             else:
-                combat_log = "Flecha no impacta a nadie."
+                hit, crit = roll_hit_and_crit(player, active_enemy)
+                if not hit: combat_log = "Golpe fuerte falla."
+                else:
+                    dmg = calc_damage(player, active_enemy, power=1.8, is_crit=crit)
+                    active_enemy['hp'] -= dmg
+                    combat_log = f"Golpe fuerte causa {dmg} daño."
+                    # spawn_floating_text(active_enemy['x'], active_enemy['y'], f"-{dmg}", (255,200,120))
+                    if random.random() < 0.25: # Aplicar sangrado
+                        active_enemy['bleed'] = active_enemy.get('bleed',0) + 2
+                        combat_log += " (sangrado)"
+                player['cd_strike'] = 5
+                if active_enemy['hp'] <= 0: end_combat('player'); return
             combat_turn = "enemy"
 
 def enemy_turn():
@@ -1035,6 +1148,9 @@ def enemy_turn():
         if player['def_turns'] <= 0 and 'def_backup' in player:
             player['def'] = player['def_backup']; del player['def_backup']
 
+    # Aplicar ticks de estado
+    apply_status_ticks(player)
+    apply_status_ticks(active_enemy)
 
     # Reducir Cooldowns y Buffs
     if player['cd_arrow'] > 0: player['cd_arrow'] -= 1
@@ -1068,6 +1184,13 @@ shop_open = False
 shop_message = ""
 shop_message_timer = 0
 
+def open_shop():
+    """Cambia el estado a 'shop' e inicializa el menú de la tienda."""
+    global shop_open, shop_message, game_state, shop_message_timer
+    shop_open = True
+    game_state = "shop"
+    shop_message = "Bienvenido. 1/2/3 comprar, Q salir."
+    shop_message_timer = 0
 
 def shop_buy(idx):
     """Procesa la compra de un ítem de la tienda (teclas 1, 2, 3)."""
@@ -1175,6 +1298,7 @@ def draw_everything():
     elif game_state == "shop":
         # Dibuja el mapa y luego el overlay de la tienda
         draw_map(screen)
+        # draw_particles(screen)
         draw_hud(screen)
         
         overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); screen.blit(overlay, (0, 0))
@@ -1201,6 +1325,7 @@ def draw_everything():
     else:
         # Exploración normal
         draw_map(screen)
+        # draw_particles(screen)
         draw_hud(screen)
         for ft in floating_texts: # Redibuja los textos flotantes (solo para el caso de que la lógica de draw_map haya ignorado algunos)
             sx = int((ft["x"] - player["x"]) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE)
@@ -1263,7 +1388,7 @@ def main():
     
     # Manejo del Menú Principal (asumiendo que 'menu' existe, si no, inicia directamente)
     try:
-        main_menu = 10
+        # from menu import main_menu
         # Lógica de menú y carga/inicio de partida (sin cambios)
         while True:
             action, data = main_menu()
@@ -1278,8 +1403,13 @@ def main():
                 enemies_killed = saved_data['enemies_killed']; total_score = saved_data['total_score']
                 game_map = saved_data['game_map']; exit_pos = tuple(saved_data['exit_pos'])
                 shop_pos = tuple(saved_data['shop_pos']) if saved_data['shop_pos'] else None
+                player_data = saved_data['player']; player = make_player(player_data['x'], player_data['y']); player.update(player_data)
                 enemies.clear()
-
+                for enemy_data in saved_data['enemies']:
+                    enemy = make_enemy(enemy_data['x'], enemy_data['y'], enemy_data['level']); enemy.update({
+                        'hp': enemy_data['hp'], 'hp_max': enemy_data['hp_max'], 'atk': enemy_data['atk'], 'def': enemy_data['def'],
+                        'type': enemy_data['type'], 'active': enemy_data['active'], 'gold_drop': enemy_data.get('gold_drop', 0)
+                    }); enemies.append(enemy)
                 global explored, visible
                 explored = [[False for _ in range(MAP_SIZE)] for _ in range(MAP_SIZE)]; visible = [[False for _ in range(MAP_SIZE)] for _ in range(MAP_SIZE)]
                 compute_visibility(player["x"], player["y"])
@@ -1321,10 +1451,13 @@ def main():
                     elif event.key == pygame.K_DOWN: try_move_player(0, 1); move_enemies_ai()
                     elif event.key == pygame.K_LEFT: try_move_player(-1, 0); move_enemies_ai()
                     elif event.key == pygame.K_RIGHT: try_move_player(1, 0); move_enemies_ai()
+                    elif event.key == pygame.K_s:
+                        if shop_pos and (player['x'], player['y']) == shop_pos: open_shop()
                     elif event.key == pygame.K_p: # Usar poción fuera de combate
                         if player['potions'] > 0 and player['hp'] < player['hp_max']:
                             heal = min(player['hp_max'] - player['hp'], 20)
                             player['hp'] += heal; player['potions'] -= 1
+                            # spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
                     elif event.key == pygame.K_a: # Usar flecha en exploración (no implementado en el loop, solo en combate)
                         dx,dy = player['last_dir']
                         if player['cd_arrow'] == 0:
@@ -1336,6 +1469,7 @@ def main():
                                 target = next((ee for ee in enemies if ee['x']==tx and ee['y']==ty), None)
                                 if target:
                                     log, dmg, hit = combat_attack(player, target, power=0.9)
+                                    # spawn_floating_text(target['x'], target['y'], f"-{dmg}", (255,200,120))
                                     player['cd_arrow'] = 4; hit_any = True; break
                             if not hit_any: combat_log_update("Flecha no impacta a nadie.")
                     elif event.key == pygame.K_z: # Intentar ataque fuerte en exploración (entra a combate si hay enemigo)
@@ -1343,13 +1477,16 @@ def main():
                             if e['x'] == player['x'] and e['y'] == player['y']:
                                 start_combat(e); handle_player_combat_input(pygame.K_z); break
                     elif event.key == pygame.K_n: # DEBUG: Siguiente nivel
-                        new_level(level_number + 1, preserve_stats=True, generate_new_level=True)                
+                        new_level(level_number + 1, preserve_stats=True, generate_new_level=True)
+                
+                # Manejo de inputs en Combate
                 elif game_state == "combate":
                     handle_player_combat_input(event.key)
                     if combat_turn == "enemy":
                         pygame.time.delay(120)
                         enemy_turn()
                 
+                # Manejo de inputs en Tienda
                 elif game_state == "shop":
                     if event.key == pygame.K_q: close_shop()
                     elif event.key == pygame.K_1: shop_buy(0)
@@ -1358,6 +1495,7 @@ def main():
 
         # Actualizar y dibujar
         if game_state != "gameover":
+            # update_particles_and_texts()
             draw_everything()
     
         # Pantalla de Game Over
