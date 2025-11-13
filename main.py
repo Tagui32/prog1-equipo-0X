@@ -626,6 +626,7 @@ def new_level(level=1, preserve_stats=True, generate_new_level=True):
             sx, sy = random_free_cell_from_map(dungeon)
         
         # Crear/Restaurar jugador
+        player = make_player(sx, sy)
         if old_player_stats and preserve_stats:
             player.update(old_player_stats) # Restaurar stats
 
@@ -638,6 +639,7 @@ def new_level(level=1, preserve_stats=True, generate_new_level=True):
             enemy_level = level
             if random.random() < 0.3:
                 enemy_level = min(level + 1, level + 2)
+            enemies.append(make_enemy(ex, ey, level=enemy_level))
 
         # Generar Salida (3) y Tienda (2) con comprobación de accesibilidad
         exit_candidate = find_reachable_exit_position((player["x"], player["y"]), game_map)
@@ -960,7 +962,7 @@ def apply_status_ticks(entity):
     if entity.get('bleed',0) > 0:
         dmg = max(1, int(entity['hp_max'] * 0.03)) # Daño por sangrado (3% de HP max)
         entity['hp'] -= dmg
-        # spawn_floating_text(entity['x'] + random.uniform(-0.2,0.2), entity['y'] - 0.2, f"-{dmg}", (200,100,40))
+        spawn_floating_text(entity['x'] + random.uniform(-0.2,0.2), entity['y'] - 0.2, f"-{dmg}", (200,100,40))
         entity['bleed'] -= 1
 
 def combat_attack(attacker, defender, power=1.0, status_apply=None):
@@ -980,8 +982,8 @@ def combat_attack(attacker, defender, power=1.0, status_apply=None):
             defender[k] = defender.get(k,0) + v
             
     # Feedback visual
-    # spawn_particle(defender['x'], defender['y'], n=8, color=(255,80,40), size=2)
-    # spawn_floating_text(defender['x'], defender['y'], f"-{dmg}", (255,200,120))
+    spawn_particle(defender['x'], defender['y'], n=8, color=(255,80,40), size=2)
+    spawn_floating_text(defender['x'], defender['y'], f"-{dmg}", (255,200,120))
     return (log, dmg, True)
 
 def start_combat(enemy):
@@ -1004,15 +1006,15 @@ def end_combat(victor):
         enemy_points = active_enemy['level']
         total_score += enemy_points
         exp_gained = max(5, active_enemy['level'] * 6)
-        # gain_experience(exp_gained)
+        gain_experience(exp_gained)
         g = active_enemy.get('gold_drop', 0)
         player['gold'] += g
         
         combat_log = f"Has derrotado al enemigo. +{exp_gained} EXP (+{g} oro)"
-        # spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{enemy_points} pts", (100, 200, 255))
-        # spawn_particle(active_enemy['x'], active_enemy['y'], n=12, color=(255,200,80), size=3)
-        # spawn_floating_text(active_enemy['x'], active_enemy['y'], f"+{g} oro", (255,220,100))
-        # spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{exp_gained} EXP", (100,200,255))
+        spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{enemy_points} pts", (100, 200, 255))
+        spawn_particle(active_enemy['x'], active_enemy['y'], n=12, color=(255,200,80), size=3)
+        spawn_floating_text(active_enemy['x'], active_enemy['y'], f"+{g} oro", (255,220,100))
+        spawn_floating_text(active_enemy['x'], active_enemy['y'] - 0.5, f"+{exp_gained} EXP", (100,200,255))
         
         try: enemies.remove(active_enemy)
         except ValueError: pass
@@ -1073,7 +1075,7 @@ def handle_player_combat_input(key):
             heal = min(player['hp_max'] - player['hp'], 20)
             player['hp'] += heal
             combat_log = f"Usas una poción y recuperas {heal} HP."
-            # spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
+            spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
             combat_turn = "enemy"
         else: combat_log = "No tienes pociones."
     elif key == pygame.K_a:
@@ -1110,7 +1112,7 @@ def handle_player_combat_input(key):
                     dmg = calc_damage(player, active_enemy, power=1.8, is_crit=crit)
                     active_enemy['hp'] -= dmg
                     combat_log = f"Golpe fuerte causa {dmg} daño."
-                    # spawn_floating_text(active_enemy['x'], active_enemy['y'], f"-{dmg}", (255,200,120))
+                    spawn_floating_text(active_enemy['x'], active_enemy['y'], f"-{dmg}", (255,200,120))
                     if random.random() < 0.25: # Aplicar sangrado
                         active_enemy['bleed'] = active_enemy.get('bleed',0) + 2
                         combat_log += " (sangrado)"
@@ -1227,6 +1229,167 @@ def close_shop():
 # RENDERING Y EFECTOS VISUALES
 # ----------------------
 
+def spawn_particle(x, y, n=6, color=(255,200,100), size=3, speed=1.2, life=18):
+    """Genera una explosión de partículas en las coordenadas (x, y)."""
+    for _ in range(n):
+        ang = random.random() * math.pi * 2
+        particles.append({
+            "x": x + random.uniform(-6,6),
+            "y": y + random.uniform(-6,6),
+            "dx": math.cos(ang)*random.uniform(0.2,speed),
+            "dy": math.sin(ang)*random.uniform(0.2,speed),
+            "life": random.randint(int(life*0.6), int(life*1.2)),
+            "color": color,
+            "size": random.randint(1,size)
+        })
+
+def spawn_floating_text(x, y, text, color=(255,255,255), life=40):
+    """Crea un texto que flota hacia arriba (usado para daño, oro, EXP)."""
+    floating_texts.append({
+        "x": x,
+        "y": y,
+        "text": str(text),
+        "color": color,
+        "life": life,
+        "vy": -0.4 - random.random()*0.6
+    })
+
+def draw_health_bar(surface, mx, my, w, h, pct):
+    """Dibuja una barra de vida con color dinámico basado en el porcentaje (pct)."""
+    bar_w = w
+    bar_h = 6
+    bx = mx + (w - bar_w)//2
+    by = my - bar_h - 6
+    pygame.draw.rect(surface, (40,40,40), (bx, by, bar_w, bar_h))
+    fill = int(bar_w * max(0, min(1, pct)))
+    col = (200,60,60) if pct < 0.35 else (220,180,60) if pct < 0.7 else (100,220,100)
+    pygame.draw.rect(surface, col, (bx, by, fill, bar_h))
+
+def update_particles_and_texts():
+    """Actualiza la posición, vida y movimiento de todas las partículas y textos flotantes."""
+    for p in particles[:]:
+        p['x'] += p['dx']; p['y'] += p['dy']; p['life'] -= 1; p['dy'] += 0.02
+        if p['life'] <= 0: particles.remove(p)
+    for ft in floating_texts[:]:
+        ft['x'] += 0; ft['y'] += ft['vy'] * 0.02; ft['life'] -= 1
+        if ft['life'] <= 0: floating_texts.remove(ft)
+
+def draw_map(surface, interp=1.0):
+    """Dibuja la vista del mapa con efectos de niebla y luz basados en la visibilidad."""
+    surface.fill(COLOR_BG)
+    px = player["x"]; py = player["y"]
+    
+    for row in range(-CAMERA_RADIUS, CAMERA_RADIUS + 1):
+        for col in range(-CAMERA_RADIUS, CAMERA_RADIUS + 1):
+            mx = px + col; my = py + row
+            sx = (col + CAMERA_RADIUS) * TILE_SIZE; sy = (row + CAMERA_RADIUS) * TILE_SIZE
+            
+            if 0 <= mx < MAP_SIZE and 0 <= my < MAP_SIZE:
+                tile = game_map[my][mx]
+                
+                # Dibujar tiles (pared, suelo, tienda, salida)
+                if tile == 1: pygame.draw.rect(surface, COLOR_WALL, (sx, sy, TILE_SIZE, TILE_SIZE))
+                elif tile == 0: pygame.draw.rect(surface, COLOR_FLOOR, (sx, sy, TILE_SIZE, TILE_SIZE))
+                elif tile == 2: # Tienda
+                    pygame.draw.rect(surface, COLOR_FLOOR, (sx, sy, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(surface, COLOR_SHOP, (sx+4, sy+4, TILE_SIZE-8, TILE_SIZE-8), border_radius=4)
+                elif tile == 3: # Salida
+                    pygame.draw.rect(surface, COLOR_FLOOR, (sx, sy, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(surface, COLOR_EXIT, (sx+6, sy+6, TILE_SIZE-12, TILE_SIZE-12), border_radius=6)
+
+                # Dibujar enemigos en el mapa
+                for e in enemies:
+                    if e["x"] == mx and e["y"] == my:
+                        if not explored[my][mx] and not e["active"]: pass
+                        else:
+                            ex = sx + TILE_SIZE//2 + int(e["vx"] * TILE_SIZE * interp)
+                            ey = sy + TILE_SIZE//2 + int(e["vy"] * TILE_SIZE * interp)
+                            pygame.draw.circle(surface, COLOR_ENEMY_SHADOW, (ex, ey+8), 12)
+                            pygame.draw.circle(surface, COLOR_ENEMY, (ex, ey), 10)
+                            lvl = tinyfont.render(f"{e['level']}", True, (20,20,20))
+                            surface.blit(lvl, (ex - lvl.get_width()//2, ey - 6))
+                            draw_health_bar(surface, sx, sy, TILE_SIZE, TILE_SIZE, e["hp"]/e["hp_max"])
+
+                # Aplicar niebla de guerra y sombras
+                if not explored[my][mx]:
+                    overlay = pygame.Surface((TILE_SIZE, TILE_SIZE)); overlay.fill((0,0,0)); surface.blit(overlay, (sx, sy))
+                else:
+                    if not visible[my][mx]:
+                        overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA); overlay.fill(FOG_EXPLORED); surface.blit(overlay, (sx, sy))
+                    else:
+                        dist = math.hypot(mx - px, my - py); alpha = int(90 * (dist / VISION_RADIUS))
+                        alpha = max(0, min(alpha, 200))
+                        if alpha > 0:
+                            overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA); overlay.fill((0,0,0, alpha)); surface.blit(overlay, (sx, sy))
+            else:
+                pygame.draw.rect(surface, (0,0,0), (sx, sy, TILE_SIZE, TILE_SIZE))
+
+    # Dibujar Jugador
+    center_x = CAMERA_RADIUS * TILE_SIZE + TILE_SIZE//2 + int(player["vx"] * TILE_SIZE * interp)
+    center_y = CAMERA_RADIUS * TILE_SIZE + TILE_SIZE//2 + int(player["vy"] * TILE_SIZE * interp)
+    pygame.draw.ellipse(surface, COLOR_PLAYER_SHADOW, (center_x-12, center_y+8, 24, 10))
+    pygame.draw.rect(surface, COLOR_PLAYER, (center_x-10, center_y-10, 20, 20), border_radius=4)
+    draw_health_bar(surface, center_x - TILE_SIZE//2, center_y - TILE_SIZE//2, TILE_SIZE, TILE_SIZE, player["hp"]/player["hp_max"])
+
+    # Dibujar textos flotantes
+    for ft in floating_texts:
+        txt = tinyfont.render(ft["text"], True, ft["color"])
+        surface.blit(txt, ( (ft["x"] - px) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE - txt.get_width()//2,
+                   (ft["y"] - py) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE - 10 ))
+
+def draw_particles(surface):
+    """Dibuja todas las partículas de efectos visuales."""
+    for p in particles:
+        sx = int((p["x"] - player["x"]) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE)
+        sy = int((p["y"] - player["y"]) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE)
+        pygame.draw.circle(surface, p["color"], (sx, sy), max(1, int(p["size"])))
+
+def draw_hud(surface):
+    """Dibuja la interfaz de usuario (estadísticas, EXP, oro, CD's) en la parte inferior de la pantalla."""
+    global combat_log, combat_log_timer
+    
+    hud_y = WINDOW_TILES * TILE_SIZE
+    pygame.draw.rect(surface, (15, 15, 20), (0, hud_y, SCREEN_W, SCREEN_H - hud_y))
+    pygame.draw.line(surface, (60, 60, 80), (0, hud_y), (SCREEN_W, hud_y), 2)
+    
+    # Dibujo de stats y barras de HP/EXP (sin cambios en la lógica)
+    stats_section_y = hud_y + 8
+    
+    line1 = f"Jugador: {player_nickname} | Nivel: {player.get('level', 1)} | Vida: {player['hp']}/{player['hp_max']}"
+    txt1 = font.render(line1, True, COLOR_TEXT); surface.blit(txt1, (10, stats_section_y))
+    hp_pct = player['hp'] / player['hp_max']; hp_bar_width = 200
+    pygame.draw.rect(surface, (40, 40, 40), (10, stats_section_y + 20, hp_bar_width, 12))
+    pygame.draw.rect(surface, (220, 60, 60) if hp_pct < 0.3 else (60, 200, 80), (10, stats_section_y + 20, int(hp_bar_width * hp_pct), 12))
+    hp_text = tinyfont.render(f"{player['hp']}/{player['hp_max']} HP", True, (240, 240, 240)); surface.blit(hp_text, (15, stats_section_y + 22))
+    
+    exp_percentage = (player['exp'] / player['exp_to_next_level']) * 100 if player['exp_to_next_level'] > 0 else 0
+    line2 = f"EXP: {player.get('exp', 0)}/{player.get('exp_to_next_level', 15)} ({exp_percentage:.0f}%) | Oro: {player['gold']} | Pociones: {player['potions']}"
+    txt2 = font.render(line2, True, COLOR_TEXT); surface.blit(txt2, (10, stats_section_y + 40))
+    exp_pct = player['exp'] / player['exp_to_next_level'] if player['exp_to_next_level'] > 0 else 0
+    exp_bar_width = 200
+    pygame.draw.rect(surface, (40, 40, 40), (10, stats_section_y + 58, exp_bar_width, 8))
+    pygame.draw.rect(surface, (100, 200, 255), (10, stats_section_y + 58, int(exp_bar_width * exp_pct), 8))
+    
+    line3 = f"Piso: {level_number} | Enemigos: {enemies_killed} | Puntos: {total_score}"
+    txt3 = font.render(line3, True, COLOR_TEXT); surface.blit(txt3, (10, stats_section_y + 72))
+    
+    # Dibujo de Habilidades y Cooldowns (sin cambios en la lógica)
+    skills_section_x = SCREEN_W - 320; skills_section_y = hud_y + 8
+    skills_title = font.render("HABILIDADES", True, (200, 200, 255)); surface.blit(skills_title, (skills_section_x, skills_section_y))
+    arrow_status = "LISTA" if player['cd_arrow'] == 0 else f"CD {player['cd_arrow']}"
+    strike_status = "LISTO" if player['cd_strike'] == 0 else f"CD {player['cd_strike']}"
+    cd_lines = [f"[A] Flecha: {arrow_status}", f"[Z] Golpe Fuerte: {strike_status}", f"[P] Poción: {player['potions']} disp."]
+    
+    for i, line in enumerate(cd_lines):
+        color = (100, 255, 100) if "LIST" in line else (255, 200, 100) if "CD" in line else (100, 200, 255) if "Poción" in line else (200, 200, 200)
+        cd_text = font.render(line, True, color)
+        surface.blit(cd_text, (skills_section_x, skills_section_y + 25 + i * 20))
+    
+    # Dibujo del Log de Combate
+    if combat_log and combat_log_timer > 0:
+        log_bg = pygame.Surface((SCREEN_W - 20, 30), pygame.SRCALPHA); log_bg.fill((0, 0, 0, 180)); surface.blit(log_bg, (10, hud_y - 35))
+        logtxt = bigfont.render(combat_log, True, (255, 220, 100)); surface.blit(logtxt, (SCREEN_W // 2 - logtxt.get_width() // 2, hud_y - 30))
+
 def draw_combat_screen(surface):
     """Dibuja la interfaz completa de combate, incluyendo sprites, barras de vida, diálogo y opciones."""
     surface.fill((25, 20, 30))
@@ -1298,7 +1461,7 @@ def draw_everything():
     elif game_state == "shop":
         # Dibuja el mapa y luego el overlay de la tienda
         draw_map(screen)
-        # draw_particles(screen)
+        draw_particles(screen)
         draw_hud(screen)
         
         overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); screen.blit(overlay, (0, 0))
@@ -1325,7 +1488,7 @@ def draw_everything():
     else:
         # Exploración normal
         draw_map(screen)
-        # draw_particles(screen)
+        draw_particles(screen)
         draw_hud(screen)
         for ft in floating_texts: # Redibuja los textos flotantes (solo para el caso de que la lógica de draw_map haya ignorado algunos)
             sx = int((ft["x"] - player["x"]) * TILE_SIZE + CAMERA_RADIUS * TILE_SIZE)
@@ -1388,7 +1551,7 @@ def main():
     
     # Manejo del Menú Principal (asumiendo que 'menu' existe, si no, inicia directamente)
     try:
-        # from menu import main_menu
+        from menu import main_menu
         # Lógica de menú y carga/inicio de partida (sin cambios)
         while True:
             action, data = main_menu()
@@ -1457,7 +1620,7 @@ def main():
                         if player['potions'] > 0 and player['hp'] < player['hp_max']:
                             heal = min(player['hp_max'] - player['hp'], 20)
                             player['hp'] += heal; player['potions'] -= 1
-                            # spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
+                            spawn_floating_text(player['x'], player['y'], f"+{heal}", (120,255,120))
                     elif event.key == pygame.K_a: # Usar flecha en exploración (no implementado en el loop, solo en combate)
                         dx,dy = player['last_dir']
                         if player['cd_arrow'] == 0:
@@ -1469,7 +1632,7 @@ def main():
                                 target = next((ee for ee in enemies if ee['x']==tx and ee['y']==ty), None)
                                 if target:
                                     log, dmg, hit = combat_attack(player, target, power=0.9)
-                                    # spawn_floating_text(target['x'], target['y'], f"-{dmg}", (255,200,120))
+                                    spawn_floating_text(target['x'], target['y'], f"-{dmg}", (255,200,120))
                                     player['cd_arrow'] = 4; hit_any = True; break
                             if not hit_any: combat_log_update("Flecha no impacta a nadie.")
                     elif event.key == pygame.K_z: # Intentar ataque fuerte en exploración (entra a combate si hay enemigo)
@@ -1495,7 +1658,7 @@ def main():
 
         # Actualizar y dibujar
         if game_state != "gameover":
-            # update_particles_and_texts()
+            update_particles_and_texts()
             draw_everything()
     
         # Pantalla de Game Over
