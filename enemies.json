@@ -1,0 +1,47 @@
+{
+  "Murciélago de Caverna": {
+    "sprite": "bat.png",
+    "dialogues": [
+      "Tus pasos retumban como un tambor en mi cabeza.",
+      "Los humanos nunca aprenden, siempre suben… o bajan.",
+      "Tu sangre suena deliciosa.",
+      "Podría volar lejos, pero prefiero desgarrarte."
+    ]
+  },
+  "Esqueleto del Abismo": {
+    "sprite": "esqueleto.png",
+    "dialogues": [
+      "Te escuché venir desde la otra sala, suenan tus pasos… vivos.",
+      "¿Venís a unirte a nosotros?",
+      "Antes fui un caballero, como vos.",
+      "No hay victoria en este lugar, solo polvo."
+    ]
+  },
+  "Rata Gigante": {
+    "sprite": "rat.png",
+    "dialogues": [
+      "No todos los días la cena viene con armadura.",
+      "Hueles a miedo.",
+      "Deberías dejarme morderte, es tradición.",
+      "¿Sabés lo que me costó encontrar comida acá abajo?"
+    ]
+  },
+  "Slime Sombrío": {
+    "sprite": "slime.png",
+    "dialogues": [
+      "Glup... otro héroe. Qué sorpresa.",
+      "Cada golpe tuyo me hace más grande.",
+      "He comido mejores guerreros que vos.",
+      "¿De verdad trajiste una espada? Soy gelatina."
+    ]
+  },
+  "Goblin Minero": {
+    "sprite": "goblin.png",
+    "dialogues": [
+      "Otra vez un tipo con espada? Pensé que ya se habían extinguido.",
+      "Eh, no toques mi oro o te muerdo los dedos.",
+      "Llevo toda la noche cavando y venís a molestar.",
+      "No me subestimes, humano brillante."
+    ]
+  }
+}
